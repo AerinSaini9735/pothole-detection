@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Pothole GPS Tracker</title>
+
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #101827;
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 25px;
+            border-radius: 15px;
+            max-width: 400px;
+            margin: auto;
+        }
+
+        h2 {
+            color: #38bdf8;
+        }
+
+        .value {
+            font-size: 17px;
+            margin: 20px 0;
+        }
+
+        button {
+            background: #0284c7;
+            color: white;
+            border: none;
+            padding: 14px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            margin: 8px;
+        }
+
+        #status, #mqttStatus, #publishStatus {
+            color: #facc15;
+            margin-top: 15px;
+            overflow-wrap: anywhere;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="card">
+
+    <h2>Pothole GPS Tracker</h2>
+
+    <div class="value">
+        Latitude: <span id="lat">--</span>
+    </div>
+
+    <div class="value">
+        Longitude: <span id="lon">--</span>
+    </div>
+
+    <div class="value">
+        Accuracy: <span id="accuracy">--</span>
+    </div>
+
+    <button onclick="startGPS()">Start GPS</button>
+    <button onclick="stopGPS()">Stop GPS</button>
+
+    <p id="status">GPS: Waiting...</p>
+    <p id="mqttStatus">MQTT: Disconnected</p>
+    <p id="publishStatus">Publishing: Waiting...</p>
+
+</div>
+
+<script>
+
+const broker =
+"wss://79038d94d76e4fcd9425ff49bf850c63.s1.eu.hivemq.cloud:8884/mqtt";
+
+const username = "pothole_app";
+const password = "123456789";
+
+let mqttClient;
+let watchID;
+
+function connectMQTT() {
+
+    document.getElementById("mqttStatus").innerText =
+        "MQTT: Connecting...";
+
+    mqttClient = mqtt.connect(broker, {
+
+        username: username,
+        password: password,
+
+        clientId: "iphone_gps_" +
+            Math.random().toString(16).slice(2),
+
+        clean: true,
+        connectTimeout: 10000,
+        reconnectPeriod: 3000
+
+    });
+
+    mqttClient.on("connect", () => {
+
+        document.getElementById("mqttStatus").innerText =
+            "MQTT: Connected to HiveMQ";
+
+    });
+
+    mqttClient.on("error", (error) => {
+
+        document.getElementById("mqttStatus").innerText =
+            "MQTT Error: " + error.message;
+
+    });
+
+    mqttClient.on("offline", () => {
+
+        document.getElementById("mqttStatus").innerText =
+            "MQTT: Offline";
+
+    });
+}
+
+function publishGPS(latitude, longitude, accuracy) {
+
+    if (!mqttClient || !mqttClient.connected) {
+
+        document.getElementById("publishStatus").innerText =
+            "Publishing: Waiting for MQTT connection";
+
+        return;
+    }
+
+    const data = {
+
+        device: "iPhone 15",
+
+        latitude: latitude,
+
+        longitude: longitude,
+
+        accuracy: accuracy,
+
+        timestamp: new Date().toISOString()
+
+    };
+
+    mqttClient.publish(
+        "pothole/gps",
+        JSON.stringify(data),
+        { qos: 0 },
+        (error) => {
+
+            if (error) {
+
+                document.getElementById("publishStatus").innerText =
+                    "Publishing failed";
+
+            } else {
+
+                document.getElementById("publishStatus").innerText =
+                    "GPS data published successfully!";
+
+            }
+        }
+    );
+}
+
+function startGPS() {
+
+    if (!navigator.geolocation) {
+
+        document.getElementById("status").innerText =
+            "GPS is not supported";
+
+        return;
+    }
+
+    connectMQTT();
+
+    document.getElementById("status").innerText =
+        "GPS: Requesting permission...";
+
+    watchID = navigator.geolocation.watchPosition(
+
+        function(position) {
+
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            document.getElementById("lat").innerText =
+                lat.toFixed(6);
+
+            document.getElementById("lon").innerText =
+                lon.toFixed(6);
+
+            document.getElementById("accuracy").innerText =
+                accuracy.toFixed(1) + " metres";
+
+            document.getElementById("status").innerText =
+                "GPS: Location received";
+
+            publishGPS(lat, lon, accuracy);
+
+        },
+
+        function(error) {
+
+            document.getElementById("status").innerText =
+                "GPS Error: " + error.message;
+
+        },
+
+        {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 15000
+        }
+    );
+}
+
+function stopGPS() {
+
+    if (watchID !== undefined) {
+        navigator.geolocation.clearWatch(watchID);
+    }
+
+    if (mqttClient) {
+        mqttClient.end();
+    }
+
+    document.getElementById("status").innerText =
+        "GPS: Stopped";
+
+    document.getElementById("mqttStatus").innerText =
+        "MQTT: Disconnected";
+}
+
+</script>
+
+</body>
+</html>
